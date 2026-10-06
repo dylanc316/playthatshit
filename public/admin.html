@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex">
+<title>Admin · Play That Shit!</title>
+<style>
+  body { font-family: Arial, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 20px; }
+  input, button { font: inherit; padding: 8px 12px; }
+  li { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-top: 1px solid #ccc; list-style: none; }
+  ul { padding: 0; }
+  #msg { min-height: 1.4em; }
+</style>
+</head>
+<body>
+<h1>Admin</h1>
+<input id="pw" type="password" placeholder="Admin password" aria-label="Admin password">
+<button id="load">Load songs</button>
+<p id="msg" role="status"></p>
+<ul id="list"></ul>
+<script>
+const $ = (id) => document.getElementById(id);
+const headers = () => ({ 'Content-Type': 'application/json', Authorization: 'Bearer ' + $('pw').value });
+
+async function load() {
+  $('msg').textContent = 'Loading…';
+  const r = await fetch('/api/admin', { headers: headers() });
+  const d = await r.json();
+  if (!r.ok) { $('msg').textContent = d.error; return; }
+  $('msg').textContent = d.library.length + ' songs';
+  $('list').replaceChildren();
+  for (const s of d.library) {
+    const li = document.createElement('li');
+    const label = document.createElement('span');
+    label.textContent = `${s.title} (added by ${s.name})` + (s.id === d.currentId ? ' — playing now' : '');
+    const btn = document.createElement('button');
+    btn.textContent = 'Remove';
+    btn.onclick = async () => {
+      if (!confirm('Remove "' + s.title + '" permanently?')) return;
+      const r2 = await fetch('/api/admin', { method: 'POST', headers: headers(), body: JSON.stringify({ id: s.id }) });
+      if (r2.ok) load(); else $('msg').textContent = (await r2.json()).error;
+    };
+    li.append(label, btn);
+    $('list').append(li);
+  }
+}
+$('load').onclick = load;
+</script>
+</body>
+</html>
