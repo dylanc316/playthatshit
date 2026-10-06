@@ -38,6 +38,36 @@
   input::file-selector-button { font:inherit; font-weight:600; margin-right:12px; padding:6px 12px; border:0; border-radius:999px; background:var(--ink); color:#ffffff; cursor:pointer; }
   #msg { min-height:1.4em; margin:4px 0 0; }
   @media (prefers-reduced-motion: no-preference) { .bar i { transition: width .9s linear; } }
+
+  @property --h { syntax: '<number>'; inherits: true; initial-value: 330; }
+  
+  html { transition: --h 2s ease; }
+  
+  body { background: none; }
+  
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    background: linear-gradient(120deg,
+      hsl(calc(var(--h) - 45) 90% 72%),
+      hsl(var(--h) 90% 68%),
+      hsl(calc(var(--h) + 45) 90% 72%),
+      hsl(var(--h) 90% 68%));
+    background-size: 300% 300%;
+    animation: drift 24s ease-in-out infinite;
+  }
+  
+  @keyframes drift {
+    0%, 100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+  }
+  
+  @media (prefers-reduced-motion: reduce) {
+    html { transition: none; }
+    body::before { animation: none; }
+  }
 </style>
 </head>
 <body>
@@ -119,6 +149,11 @@ function schedule() {
 
 function render() {
   const cur = state.current;
+  if (cur) {
+    let h = 0;
+    for (const c of cur.song.id) h = (h * 31 + c.charCodeAt(0)) % 360;
+    document.documentElement.style.setProperty('--h', h);
+  }
   $('title').textContent = cur ? cur.song.title : 'Nothing yet';
   $('by').replaceChildren(...(cur ? ['Added by ', Object.assign(document.createElement('b'), { textContent: cur.song.name })] : ['Add the first song below.']));
   $('label').textContent = cur ? 'Now playing' : 'Queue is empty';
