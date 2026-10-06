@@ -17,6 +17,16 @@ export default async function handler(req, res) {
     }
     if (req.method === 'POST') {
       const { id, action, to } = req.body || {};
+      if (action === 'reset') {
+        // Replace the queue with the whole library, starting right after the song playing now.
+        await mutate((s) => {
+          const i = s.library.findIndex((x) => x.id === s.current?.song.id);
+          const pool = i === -1 ? s.library : [...s.library.slice(i + 1), ...s.library.slice(0, i)];
+          s.queue = (pool.length ? pool : s.library).map((x) => ({ ...x, looped: true }));
+          advance(s, Date.now());
+        });
+        return res.json({ ok: true });
+      }
       if (action === 'move') {
         // Put a song at queue position `to` (0 = plays next). Moved songs count as deliberate picks.
         await mutate((s) => {
