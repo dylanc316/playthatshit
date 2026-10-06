@@ -118,16 +118,22 @@ let playingId = null;
 const serverNow = () => Date.now() + offset;
 const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
-async function poll() {
+async function syncClock() {
   try {
     const t0 = Date.now();
-    const r = await fetch('/api/state', { cache: 'no-store' });
+    const r = await fetch('/api/time', { cache: 'no-store' });
     const t1 = Date.now();
+    const { now } = await r.json();
+    const rtt = t1 - t0;
+    if (rtt <= bestRtt * 1.5 + 50) { bestRtt = Math.min(bestRtt, rtt); offset = now + rtt / 2 - t1; }
+  } catch (e) { console.error(e); }
+}
+  
+async function poll() {
+  try {
+    const r = await fetch('/api/state');
     const data = await r.json();
     if (!r.ok) throw new Error(data.error);
-    // Clock sync: keep the offset from the lowest-latency sample.
-    const rtt = t1 - t0;
-    if (rtt <= bestRtt * 1.5 + 50) { bestRtt = Math.min(bestRtt, rtt); offset = data.now + rtt / 2 - t1; }
     state = data;
     render();
     sync();
@@ -139,7 +145,7 @@ async function poll() {
 let timer;
 function schedule() {
   clearTimeout(timer);
-  let wait = 5000;
+  let wait = document.hidden ? 30000 : 5000;
   if (state?.current) {
     const end = state.current.startedAt + state.current.song.duration * 1000;
     wait = Math.max(300, Math.min(wait, end - serverNow() + 150));
@@ -175,6 +181,7 @@ function sync() {
   const cur = state.current;
   if (!cur) { audio.pause(); playingId = null; return; }
   const expected = (serverNow() - cur.startedAt) / 1000;
+  if (expected >= cur.song.duration) return;
   if (playingId !== cur.song.id) {
     playingId = cur.song.id;
     audio.src = cur.song.url;
@@ -241,7 +248,12 @@ $('form').onsubmit = async (e) => {
   btn.disabled = false;
 };
 
-poll();
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { clearTimeout(timer); poll(); } });
+(async () => {
+  for (let i = 0; i < 3; i++) await syncClock();
+  poll();
+  setInterval(syncClock, 120000);
+})();
 </script>
 </body>
 </html>
