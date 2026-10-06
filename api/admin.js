@@ -19,7 +19,7 @@ export default async function handler(req, res) {
         await mutate((s) => {
           const [first, ...rest] = s.library;
           s.current = first ? { song: first, startedAt: Date.now() } : null;
-          s.queue = rest.map((x) => ({ ...x, looped: true }));
+          s.queue = rest.map((x) => ({ ...x })); // plain songs, no "replay" flag
         });
         return res.json({ ok: true });
       }
