@@ -68,6 +68,8 @@
     html { transition: none; }
     body::before { animation: none; }
   }
+
+  #time { margin-top:8px; font-size:15px; color:var(--dim); font-variant-numeric:tabular-nums; }
 </style>
 </head>
 <body>
@@ -79,6 +81,7 @@
     <h1 id="title">Nothing yet</h1>
     <div id="by">Add the first song below.</div>
     <div class="bar"><i id="prog"></i></div>
+    <div id="time"></div>
     <button id="tune" hidden>Tune in</button>
   </div>
 
@@ -204,9 +207,10 @@ $('tune').onclick = () => {
 // Progress bar
 setInterval(() => {
   const cur = state?.current;
-  if (!cur) return ($('prog').style.width = '0');
-  const p = ((serverNow() - cur.startedAt) / 1000) / cur.song.duration;
-  $('prog').style.width = `${Math.min(100, Math.max(0, p * 100))}%`;
+  if (!cur) { $('prog').style.width = '0'; $('time').textContent = ''; return; }
+  const el = Math.min(cur.song.duration, Math.max(0, (serverNow() - cur.startedAt) / 1000));
+  $('prog').style.width = `${(el / cur.song.duration) * 100}%`;
+  $('time').textContent = `${fmt(el)} / ${fmt(cur.song.duration)}`;
 }, 1000);
 
 // Upload
