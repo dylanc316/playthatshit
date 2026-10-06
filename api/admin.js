@@ -1,64 +1,74 @@
-import { del } from '@vercel/blob';
-import { mutate, advance } from '../lib/store.js';
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex">
+<title>Admin · Play That Shit!</title>
+<style>
+  body { font-family: Arial, sans-serif; max-width: 760px; margin: 40px auto; padding: 0 20px; }
+  input, button { font: inherit; padding: 8px 12px; }
+  ul { padding: 0; }
+  li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid #ccc; list-style: none; }
+  .btns { display: flex; gap: 6px; flex-shrink: 0; }
+  #msg { min-height: 1.4em; }
+</style>
+</head>
+<body>
+<h1>Admin</h1>
+<input id="pw" type="password" placeholder="Admin password" aria-label="Admin password">
+<button id="load">Load</button>
+<button id="reset">Reset queue to library</button>
+<p id="msg" role="status"></p>
+<h2>Queue (top plays next)</h2>
+<ul id="queue"></ul>
+<h2>Library</h2>
+<ul id="list"></ul>
+<script>
+const $ = (id) => document.getElementById(id);
+const headers = () => ({ 'Content-Type': 'application/json', Authorization: 'Bearer ' + $('pw').value });
 
-export default async function handler(req, res) {
-  const secret = process.env.ADMIN_SECRET;
-  if (!secret || req.headers.authorization !== `Bearer ${secret}`) {
-    return res.status(401).json({ error: 'Wrong password' });
-  }
-  try {
-    if (req.method === 'GET') {
-      const s = await mutate((s) => { advance(s, Date.now()); return s; });
-      return res.json({
-        currentId: s.current?.song.id || null,
-        library: s.library,
-        queue: s.queue.map(({ id, title, name, looped }) => ({ id, title, name, looped: !!looped })),
-      });
-    }
-    if (req.method === 'POST') {
-      const { id, action, to } = req.body || {};
-      if (action === 'reset') {
-        // Replace the queue with the whole library, starting right after the song playing now.
-        await mutate((s) => {
-          const i = s.library.findIndex((x) => x.id === s.current?.song.id);
-          const pool = i === -1 ? s.library : [...s.library.slice(i + 1), ...s.library.slice(0, i)];
-          s.queue = (pool.length ? pool : s.library).map((x) => ({ ...x, looped: true }));
-          advance(s, Date.now());
-        });
-        return res.json({ ok: true });
-      }
-      if (action === 'move') {
-        // Put a song at queue position `to` (0 = plays next). Moved songs count as deliberate picks.
-        await mutate((s) => {
-          const i = s.queue.findIndex((x) => x.id === id);
-          let song;
-          if (i !== -1) song = s.queue.splice(i, 1)[0];
-          else {
-            const l = s.library.find((x) => x.id === id);
-            if (!l) return;
-            song = { ...l };
-          }
-          delete song.looped;
-          const pos = Math.max(0, Math.min(Number(to) || 0, s.queue.length));
-          s.queue.splice(pos, 0, song);
-        });
-        return res.json({ ok: true });
-      }
-      let url = null;
-      await mutate((s) => {
-        const song = s.library.find((x) => x.id === id) || s.queue.find((x) => x.id === id) ||
-          (s.current?.song.id === id ? s.current.song : null);
-        url = song?.url || null;
-        s.library = s.library.filter((x) => x.id !== id);
-        s.queue = s.queue.filter((x) => x.id !== id);
-        if (s.current?.song.id === id) s.current = null; // skips it; next song starts immediately
-        advance(s, Date.now());
-      });
-      if (url) await del(url).catch(() => {}); // also delete the audio file from Blob
-      return res.json({ ok: true });
-    }
-    res.status(405).end();
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+async function post(body) {
+  const r = await fetch('/api/admin', { method: 'POST', headers: headers(), body: JSON.stringify(body) });
+  if (r.ok) load(); else $('msg').textContent = (await r.json()).error;
 }
+function btn(text, fn) { const b = document.createElement('button'); b.textContent = text; b.onclick = fn; return b; }
+function row(label, buttons) {
+  const li = document.createElement('li');
+  const span = document.createElement('span'); span.textContent = label;
+  const box = document.createElement('div'); box.className = 'btns'; box.append(...buttons);
+  li.append(span, box);
+  return li;
+}
+
+async function load() {
+  $('msg').textContent = 'Loading…';
+  const r = await fetch('/api/admin', { headers: headers() });
+  const d = await r.json();
+  if (!r.ok) { $('msg').textContent = d.error; return; }
+  $('msg').textContent = `${d.queue.length} in queue, ${d.library.length} in library`;
+
+  $('queue').replaceChildren(...d.queue.map((s, i) => row(
+    `${i + 1}. ${s.title} (${s.name})${s.looped ? ' · replay' : ''}`,
+    [
+      btn('Play next', () => post({ action: 'move', id: s.id, to: 0 })),
+      btn('↑', () => post({ action: 'move', id: s.id, to: Math.max(0, i - 1) })),
+      btn('↓', () => post({ action: 'move', id: s.id, to: i + 1 })),
+    ]
+  )));
+
+  $('list').replaceChildren(...d.library.map((s) => row(
+    `${s.title} (added by ${s.name})` + (s.id === d.currentId ? ' — playing now' : ''),
+    [
+      btn('Play next', () => post({ action: 'move', id: s.id, to: 0 })),
+      btn('Remove', () => { if (confirm('Remove "' + s.title + '" permanently?')) post({ id: s.id }); }),
+    ]
+  )));
+}
+$('load').onclick = load;
+$('reset').onclick = () => {
+  if (confirm('Replace the queue with the whole library? Songs waiting in the queue will play later in the loop instead.')) post({ action: 'reset' });
+};
+</script>
+</body>
+</html>
