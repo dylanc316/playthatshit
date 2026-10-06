@@ -12,7 +12,18 @@ export default async function handler(req, res) {
       return res.json({ currentId: s.current?.song.id || null, library: s.library });
     }
     if (req.method === 'POST') {
-      const { id } = req.body || {};
+      const { id, action } = req.body || {};
+
+      if (action === 'reset') {
+        // Start over from the first song in the library; the rest of the library becomes the queue.
+        await mutate((s) => {
+          const [first, ...rest] = s.library;
+          s.current = first ? { song: first, startedAt: Date.now() } : null;
+          s.queue = rest.map((x) => ({ ...x, looped: true }));
+        });
+        return res.json({ ok: true });
+      }
+
       let url = null;
       await mutate((s) => {
         const song = s.library.find((x) => x.id === id) || s.queue.find((x) => x.id === id) ||
