@@ -9,10 +9,31 @@ export default async function handler(req, res) {
   try {
     if (req.method === 'GET') {
       const s = await mutate((s) => { advance(s, Date.now()); return s; });
-      return res.json({ currentId: s.current?.song.id || null, library: s.library });
+      return res.json({
+        currentId: s.current?.song.id || null,
+        library: s.library,
+        queue: s.queue.map(({ id, title, name, looped }) => ({ id, title, name, looped: !!looped })),
+      });
     }
     if (req.method === 'POST') {
-      const { id } = req.body || {};
+      const { id, action, to } = req.body || {};
+      if (action === 'move') {
+        // Put a song at queue position `to` (0 = plays next). Moved songs count as deliberate picks.
+        await mutate((s) => {
+          const i = s.queue.findIndex((x) => x.id === id);
+          let song;
+          if (i !== -1) song = s.queue.splice(i, 1)[0];
+          else {
+            const l = s.library.find((x) => x.id === id);
+            if (!l) return;
+            song = { ...l };
+          }
+          delete song.looped;
+          const pos = Math.max(0, Math.min(Number(to) || 0, s.queue.length));
+          s.queue.splice(pos, 0, song);
+        });
+        return res.json({ ok: true });
+      }
       let url = null;
       await mutate((s) => {
         const song = s.library.find((x) => x.id === id) || s.queue.find((x) => x.id === id) ||
