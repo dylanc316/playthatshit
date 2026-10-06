@@ -43,27 +43,34 @@ function row(label, buttons) {
 
 async function load() {
   $('msg').textContent = 'Loading…';
-  const r = await fetch('/api/admin', { headers: headers() });
-  const d = await r.json();
-  if (!r.ok) { $('msg').textContent = d.error; return; }
-  $('msg').textContent = `${d.queue.length} in queue, ${d.library.length} in library`;
+  try {
+    const r = await fetch('/api/admin', { headers: headers() });
+    const text = await r.text();
+    let d;
+    try { d = JSON.parse(text); } catch { throw new Error(`Server replied ${r.status}: ${text.slice(0, 150)}`); }
+    if (!r.ok) throw new Error(d.error);
+    if (!d.queue) throw new Error('Server is running an old api/admin.js. Deploy the latest one.');
+    $('msg').textContent = `${d.queue.length} in queue, ${d.library.length} in library`;
 
-  $('queue').replaceChildren(...d.queue.map((s, i) => row(
-    `${i + 1}. ${s.title} (${s.name})${s.looped ? ' · replay' : ''}`,
-    [
-      btn('Play next', () => post({ action: 'move', id: s.id, to: 0 })),
-      btn('↑', () => post({ action: 'move', id: s.id, to: Math.max(0, i - 1) })),
-      btn('↓', () => post({ action: 'move', id: s.id, to: i + 1 })),
-    ]
-  )));
+    $('queue').replaceChildren(...d.queue.map((s, i) => row(
+      `${i + 1}. ${s.title} (${s.name})${s.looped ? ' · replay' : ''}`,
+      [
+        btn('Play next', () => post({ action: 'move', id: s.id, to: 0 })),
+        btn('↑', () => post({ action: 'move', id: s.id, to: Math.max(0, i - 1) })),
+        btn('↓', () => post({ action: 'move', id: s.id, to: i + 1 })),
+      ]
+    )));
 
-  $('list').replaceChildren(...d.library.map((s) => row(
-    `${s.title} (added by ${s.name})` + (s.id === d.currentId ? ' — playing now' : ''),
-    [
-      btn('Play next', () => post({ action: 'move', id: s.id, to: 0 })),
-      btn('Remove', () => { if (confirm('Remove "' + s.title + '" permanently?')) post({ id: s.id }); }),
-    ]
-  )));
+    $('list').replaceChildren(...d.library.map((s) => row(
+      `${s.title} (added by ${s.name})` + (s.id === d.currentId ? ' — playing now' : ''),
+      [
+        btn('Play next', () => post({ action: 'move', id: s.id, to: 0 })),
+        btn('Remove', () => { if (confirm('Remove "' + s.title + '" permanently?')) post({ id: s.id }); }),
+      ]
+    )));
+  } catch (e) {
+    $('msg').textContent = 'Error: ' + e.message;
+  }
 }
 $('load').onclick = load;
 $('reset').onclick = () => {
