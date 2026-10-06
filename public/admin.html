@@ -18,6 +18,7 @@
 <h1>Admin</h1>
 <input id="pw" type="password" placeholder="Admin password" aria-label="Admin password">
 <button id="load">Load</button>
+<button id="reset">Reset queue to library</button>
 <p id="msg" role="status"></p>
 <h2>Queue (top plays next)</h2>
 <ul id="queue"></ul>
@@ -65,6 +66,9 @@ async function load() {
   )));
 }
 $('load').onclick = load;
+$('reset').onclick = () => {
+  if (confirm('Replace the queue with the whole library? Songs waiting in the queue will play later in the loop instead.')) post({ action: 'reset' });
+};
 </script>
 </body>
 </html>
