@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { mutate, advance, addSong, redis } from '../lib/store.js';
+import { mutate, advance, addSong } from '../lib/store.js';
+import { ipOf, useCredit, refundCredit } from '../lib/limits.js';
 
 const clean = (v, max) => String(v || '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, max);
 
@@ -14,12 +15,9 @@ export default async function handler(req, res) {
     const d = Number(duration);
     if (!(d >= 5 && d <= 15 * 60)) return res.status(400).json({ error: 'Songs must be between 5 seconds and 15 minutes' });
 
-    // Basic abuse limit: 6 additions per 10 minutes per IP
-    const ip = (req.headers['x-forwarded-for'] || 'unknown').split(',')[0].trim();
-    const rlKey = `ptd:rl:${ip}`;
-    const count = await redis.incr(rlKey);
-    if (count === 1) await redis.expire(rlKey, 600);
-    if (count > 6) return res.status(429).json({ error: 'Slow down — try again in a few minutes' });
+    // Spend one of today's upload credits (refunded below if adding fails).
+    const ip = ipOf(req);
+    if (!(await useCredit(ip))) return res.status(429).json({ error: "You're out of uploads for today. Come back tomorrow." });
 
     const song = {
       id: randomUUID(),
@@ -28,7 +26,12 @@ export default async function handler(req, res) {
       url,
       duration: d,
     };
-    await mutate((s) => { addSong(s, song); advance(s, Date.now()); });
+    try {
+      await mutate((s) => { addSong(s, song); advance(s, Date.now()); });
+    } catch (e) {
+      await refundCredit(ip);
+      throw e;
+    }
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
