@@ -73,6 +73,17 @@
 
   #vol { display:flex; align-items:center; gap:8px; font-weight:400; font-size:15px; color:var(--dim); }
   #vol input { width:110px; padding:0; border:0; accent-color:var(--ink); }
+
+  #live { margin-top:10px; font-size:15px; color:var(--dim); min-height:1.4em; }
+  #reactions { display:flex; gap:10px; flex-wrap:wrap; margin-top:22px; }
+  #reactions button { background:transparent; color:var(--ink); border:2px solid var(--line); padding:8px 16px; font-weight:600; }
+  #reactions button b { font-weight:600; margin-left:4px; font-variant-numeric:tabular-nums; }
+  #reactions button:active { transform:scale(.94); }
+  #reactions button:disabled { opacity:.4; }
+  #floaters { position:fixed; inset:0; pointer-events:none; overflow:hidden; z-index:5; }
+  .floater { position:absolute; bottom:-40px; font-size:32px; animation:floatup 2.6s ease-out forwards; }
+  @keyframes floatup { to { transform:translateY(-80vh) rotate(var(--r)); opacity:0; } }
+  @media (prefers-reduced-motion: reduce) { .floater { display:none; } }
 </style>
 </head>
 <body>
@@ -85,6 +96,13 @@
     <div id="by">Add the first song below.</div>
     <div class="bar"><i id="prog"></i></div>
     <div id="time"></div>
+    <div id="live"><span id="nlisten"></span></div>
+    <div id="reactions" role="group" aria-label="React to this song">
+      <button data-e="fire" aria-label="Fire">🔥 <b>0</b></button>
+      <button data-e="heart" aria-label="Love">❤️ <b>0</b></button>
+      <button data-e="cry" aria-label="Crying">😭 <b>0</b></button>
+      <button data-e="skull" aria-label="Dead">💀 <b>0</b></button>
+    </div>
     <button id="tune" hidden>Tune in</button>
   </div>
 
@@ -103,9 +121,16 @@
       <button id="submit">Add to queue</button>
       <p id="msg" role="status"></p>
     </form>
+    <p class="note" id="credits"></p>
     <p class="note">MP3, WAV, M4A, OGG or similar. Up to 25 MB and 15 minutes. Everyone listening hears it when it reaches the front of the queue.</p>
   </section>
+
+  <section id="historySection" hidden>
+    <h2>Recently played</h2>
+    <ol id="history"></ol>
+  </section>
 </main>
+<div id="floaters" aria-hidden="true"></div>
 
 <audio id="audio" preload="auto"></audio>
 
@@ -181,6 +206,7 @@ function render() {
   $('loopnote').textContent = !state.next.length ? '' : looping
     ? 'Nothing new in the queue, so earlier songs play again. New uploads jump ahead of replays.' : '';
   $('tune').hidden = tunedIn || !cur;
+  renderLive();
 }
 
 function sync() {
@@ -209,11 +235,97 @@ vol.oninput = () => {
   try { localStorage.setItem('ptd-vol', vol.value); } catch {}
 };
   
+// ---------- Live: listeners, reactions, history, credits ----------
+const EMOJI = { fire: '🔥', heart: '❤️', cry: '😭', skull: '💀' };
+let shown = {}, shownFor = null, seen = null, myTaps = {}, credits = 1;
+
+const cid = (() => {
+  try { let v = localStorage.getItem('ptd-cid'); if (!v) { v = crypto.randomUUID(); localStorage.setItem('ptd-cid', v); } return v; }
+  catch { return crypto.randomUUID(); }
+})();
+function ping() {
+  if (!tunedIn) return; // only people actually listening are counted
+  fetch('/api/ping', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: cid }) }).catch(() => {});
+}
+setInterval(ping, 45000);
+
+function floatEmoji(ch) {
+  const el = document.createElement('span');
+  el.className = 'floater';
+  el.textContent = ch;
+  el.style.left = (8 + Math.random() * 84) + 'vw';
+  el.style.setProperty('--r', (Math.random() * 60 - 30) + 'deg');
+  $('floaters').append(el);
+  setTimeout(() => el.remove(), 2700);
+}
+
+function renderLive() {
+  const cur = state.current;
+  $('nlisten').textContent = state.listeners ? `${state.listeners} listening` : '';
+
+  const id = cur ? cur.song.id : null;
+  if (shownFor !== id) { shownFor = id; shown = {}; seen = null; myTaps = {}; }
+  const r = state.reactions || {};
+  for (const b of document.querySelectorAll('#reactions button')) {
+    const e = b.dataset.e;
+    shown[e] = Math.max(r[e] || 0, shown[e] || 0);
+    b.querySelector('b').textContent = shown[e];
+    b.disabled = !cur;
+  }
+  // Float up emojis for other people's reactions (new since the last update).
+  if (seen) for (const e in EMOJI) {
+    const delta = (r[e] || 0) - (seen[e] || 0);
+    if (delta > 0) {
+      const mine = Math.min(myTaps[e] || 0, delta);
+      myTaps[e] = (myTaps[e] || 0) - mine;
+      for (let i = 0; i < Math.min(delta - mine, 6); i++) setTimeout(() => floatEmoji(EMOJI[e]), i * 180);
+    }
+  }
+  seen = Object.fromEntries(Object.keys(EMOJI).map((e) => [e, Math.max(r[e] || 0, seen?.[e] || 0)]));
+
+  const ol = $('history'); ol.replaceChildren();
+  for (const h of state.history || []) {
+    const li = document.createElement('li');
+    li.innerHTML = '<span></span><span></span>';
+    li.children[0].textContent = h.title;
+    li.children[1].textContent = `${h.name} · ${h.reactions} ${h.reactions === 1 ? 'reaction' : 'reactions'}`;
+    ol.append(li);
+  }
+  $('historySection').hidden = !(state.history || []).length;
+}
+
+document.querySelectorAll('#reactions button').forEach((b) => {
+  b.onclick = () => {
+    const cur = state?.current;
+    if (!cur) return;
+    const e = b.dataset.e;
+    shown[e] = (shown[e] || 0) + 1;
+    myTaps[e] = (myTaps[e] || 0) + 1;
+    b.querySelector('b').textContent = shown[e];
+    floatEmoji(EMOJI[e]);
+    fetch('/api/react', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ songId: cur.song.id, emoji: e }) }).catch(() => {});
+  };
+});
+
+async function loadCredits() {
+  try {
+    const d = await (await fetch('/api/credits', { cache: 'no-store' })).json();
+    credits = d.remaining;
+    const t = new Date(d.resetsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    $('credits').textContent = d.remaining > 0
+      ? `${d.remaining} of ${d.total} uploads left today. Resets at ${t}.`
+      : `You're out of uploads for today. They reset at ${t}.`;
+    $('submit').disabled = d.remaining <= 0;
+  } catch {}
+}
+loadCredits();
+
 $('tune').onclick = () => {
   tunedIn = true;
   $('tune').hidden = true;
   audio.play().catch(() => {});
   sync();
+  ping();
 };
 
 // Progress bar
@@ -262,6 +374,7 @@ $('form').onsubmit = async (e) => {
     poll();
   } catch (err) { msg.textContent = err.message; }
   btn.disabled = false;
+  loadCredits();
 };
 
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { clearTimeout(timer); poll(); } });
