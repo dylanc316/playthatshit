@@ -84,6 +84,7 @@
   .floater { position:absolute; bottom:-40px; font-size:32px; animation:floatup 2.6s ease-out forwards; }
   @keyframes floatup { to { transform:translateY(-80vh) rotate(var(--r)); opacity:0; } }
   @media (prefers-reduced-motion: reduce) { .floater { display:none; } }
+  .ghost { background:transparent; color:var(--ink); border:2px solid var(--line); }
 </style>
 </head>
 <body>
@@ -113,6 +114,8 @@
       <input id="songTitle" placeholder="Song title" maxlength="80" aria-label="Song title">
       <input id="yourName" placeholder="Your name" maxlength="30" aria-label="Your name">
       <button id="submit">Add to queue</button>
+      <button type="button" id="boostfake" class="ghost">🚀 Boost this song</button>
+      <p class="note" id="boostmsg" role="status" style="margin:0"></p>
       <p id="msg" role="status"></p>
     </form>
     <p class="note" id="credits"></p>
@@ -319,6 +322,15 @@ async function loadCredits() {
   } catch {}
 }
 loadCredits();
+
+// ---------- Boost (fake, just to gauge demand) ----------
+// REPLACE ME: right now this only records interest. Later, start a real checkout here
+// (and replace api/boost.js to match).
+$('boostfake').onclick = () => {
+  for (let i = 0; i < 5; i++) setTimeout(() => floatEmoji('🚀'), i * 150);
+  $('boostmsg').textContent = 'Boosting is coming soon. Thanks for your interest!';
+  fetch('/api/boost', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cid }) }).catch(() => {});
+};
 
 $('tune').onclick = () => {
   tunedIn = true;
