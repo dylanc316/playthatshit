@@ -328,7 +328,7 @@ loadCredits();
 // (and replace api/boost.js to match).
 $('boostfake').onclick = () => {
   for (let i = 0; i < 5; i++) setTimeout(() => floatEmoji('🚀'), i * 150);
-  $('boostmsg').textContent = 'Boosting is coming soon. Thanks for your interest!';
+  $('boostmsg').textContent = 'Paid boosting is coming soon. Thanks for your interest!';
   fetch('/api/boost', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cid }) }).catch(() => {});
 };
 
