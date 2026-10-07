@@ -29,7 +29,7 @@ export default async function handler(req, res) {
       now,
       current: s.current,
       // Only the very next song includes its file link and length, so pages can preload it.
-      next: s.queue.slice(0, 15).map(({ id, title, name, looped, url, duration }, i) =>
+      next: s.queue.slice(0, 10).map(({ id, title, name, looped, url, duration }, i) =>
         i === 0 ? { id, title, name, looped: !!looped, url, duration } : { id, title, name, looped: !!looped }),
       queueLength: s.queue.filter((x) => !x.looped).length,
       listeners: Number(listeners) || 0,
